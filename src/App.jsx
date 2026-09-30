@@ -32,6 +32,67 @@ const holidayName = key => HOLIDAYS[key] || "";
 const read = key => { try { return typeof window === "undefined" ? [] : JSON.parse(window.localStorage.getItem(key) || "[]"); } catch { return []; } };
 const write = (key, value) => { try { if (typeof window !== "undefined") window.localStorage.setItem(key, JSON.stringify(value)); } catch {} };
 
+const exportBackup = (tasks, completed) => {
+  const backup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    tasks,
+    completed,
+  };
+
+  const blob = new Blob(
+    [JSON.stringify(backup, null, 2)],
+    { type: "application/json" }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = `work-log-backup-${dateKey(new Date())}.json`;
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(url);
+};
+
+const importBackup = (file, setTasks, setCompleted) => {
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = event => {
+    try {
+      const backup = JSON.parse(event.target.result);
+
+      if (
+        backup.version !== 1 ||
+        !Array.isArray(backup.tasks) ||
+        !Array.isArray(backup.completed)
+      ) {
+        alert("這不是有效的工作紀錄備份檔。");
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `確定要匯入這份備份嗎？\n\n待辦工作：${backup.tasks.length} 筆\n已完成工作：${backup.completed.length} 筆\n\n匯入後會取代目前瀏覽器中的工作紀錄。`
+      );
+
+      if (!confirmed) return;
+
+      setTasks(backup.tasks);
+      setCompleted(backup.completed);
+
+      alert("備份匯入成功！");
+    } catch {
+      alert("備份檔讀取失敗，請確認選擇的是正確的 JSON 備份檔。");
+    }
+  };
+
+  reader.readAsText(file);
+};
 
 export default function WorkLogApp() {
   const today = new Date();
@@ -90,7 +151,44 @@ export default function WorkLogApp() {
     return result;
   }, [activeList, search, filter, mode]);
   return <div className="min-h-screen bg-[#F8F1E7] p-4 text-[#4F4035] md:p-6"><div className="mx-auto w-full max-w-5xl">
-    <header className="mb-3 flex flex-col items-center gap-2 text-center"><div><div className="mb-2 inline-flex rounded-full bg-[#F3DCA9] px-3 py-1 text-xs font-bold text-[#7B6031]">MY WORK LOG</div><h1 className="text-3xl font-black md:text-4xl">工作紀錄</h1></div><button type="button" onClick={() => setShowAdd(v => !v)} className="flex items-center gap-2 rounded-2xl bg-[#E8A568] px-4 py-2.5 text-sm font-extrabold text-white"><Plus className="h-4 w-4" />{showAdd ? "收起新增工作" : "新增工作"}</button></header>
+    <header className="mb-3 flex flex-col items-center gap-2 text-center"><div><div className="mb-2 inline-flex rounded-full bg-[#F3DCA9] px-3 py-1 text-xs font-bold text-[#7B6031]">MY WORK LOG</div><h1 className="text-3xl font-black md:text-4xl">工作紀錄</h1></div><div className="flex flex-wrap items-center justify-center gap-2">
+  <button
+    type="button"
+    onClick={() => exportBackup(tasks, completed)}
+    className="rounded-2xl bg-[#F2E7D8] px-4 py-2.5 text-sm font-extrabold text-[#705E50]"
+  >
+    💾 匯出備份
+  </button>
+
+<input
+  id="backup-file-input"
+  type="file"
+  accept=".json,application/json"
+  className="hidden"
+  onChange={e => {
+    importBackup(e.target.files?.[0], setTasks, setCompleted);
+    e.target.value = "";
+  }}
+/>
+
+<button
+  type="button"
+  onClick={() => document.getElementById("backup-file-input")?.click()}
+  className="rounded-2xl bg-[#F2E7D8] px-4 py-2.5 text-sm font-extrabold text-[#705E50]"
+>
+  📥 匯入備份
+</button>
+
+  <button
+    type="button"
+    onClick={() => setShowAdd(v => !v)}
+    className="flex items-center gap-2 rounded-2xl bg-[#E8A568] px-4 py-2.5 text-sm font-extrabold text-white"
+  >
+    <Plus className="h-4 w-4" />
+    {showAdd ? "收起新增工作" : "新增工作"}
+  </button>
+</div>
+</header>
     {showAdd && <div className="mb-6"><AddPanel form={form} setForm={setForm} error={error} notice={notice} addTask={addTask} /></div>}
     <div className="space-y-5"><section id="work-list-section" className="mx-auto w-full max-w-5xl rounded-[28px] bg-[#FFFDF8] p-5 shadow-[0_12px_40px_rgba(93,65,42,.08)] md:p-6"><div className="mb-2 flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-extrabold">工作清單</h2><div className="flex rounded-xl bg-[#F4EBDD] p-1"><SmallTab active={mode === "todo"} onClick={() => setMode("todo")}><ClipboardList className="h-3.5 w-3.5" />待辦 {tasks.length}</SmallTab><SmallTab active={mode === "done"} onClick={() => setMode("done")}><Check className="h-3.5 w-3.5" />已完成 {completed.length}</SmallTab></div></div><div className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto]"><div className="relative"><input aria-label="搜尋工作" className="field pr-9" value={search} onChange={e => setSearch(e.target.value)} placeholder="搜尋工作項目或說明..." />{search && <button type="button" aria-label="清除搜尋" onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 text-[#9A887A]"><X className="h-4 w-4" /></button>}</div>{mode === "todo" && <select aria-label="篩選待辦" value={filter} onChange={e => setFilter(e.target.value)} className="rounded-xl border border-[#E8D9C6] bg-[#FFFDF8] px-3 py-2 text-sm font-bold outline-none"><option value="all">全部</option><option value="today">今天</option><option value="week">7 天內</option><option value="overdue">已逾期</option><option value="dueAsc">近 → 遠</option><option value="dueDesc">遠 → 近</option></select>}</div><div className="mb-2 text-[11px] font-bold text-[#9A887A]">顯示 {filteredList.length} / {activeList.length} 筆</div><WorkList mode={mode} items={filteredList} finish={finish} restore={restore} removeDone={removeDone} removeTask={removeTask} updateTask={updateTask} /></section><Calendar month={month} setMonth={setMonth} cells={cells} today={today} tasks={tasks} completed={completed} onSelectDate={key => { const sameDay = tasks.filter(t => dueDateKey(t.due) === key).sort((a, b) => new Date(normalizeDue(a.due)).getTime() - new Date(normalizeDue(b.due)).getTime()); const target = sameDay[0]; setMode("todo"); setSearch(""); setFilter("all"); requestAnimationFrame(() => requestAnimationFrame(() => { const listSection = document.getElementById("work-list-section"); if (!target) { listSection?.scrollIntoView({ behavior: "smooth", block: "center" }); return; } const el = document.getElementById(`task-${target.id}`); if (!el) return; const scrollBox = el.closest(".task-scroll"); if (scrollBox) { const desired = el.offsetTop - (scrollBox.clientHeight - el.offsetHeight) / 2; scrollBox.scrollTo({ top: Math.max(0, Math.min(desired, scrollBox.scrollHeight - scrollBox.clientHeight)), behavior: "smooth" }); } listSection?.scrollIntoView({ behavior: "smooth", block: "center" }); el.classList.remove("task-jump-highlight"); void el.offsetWidth; el.classList.add("task-jump-highlight"); window.setTimeout(() => el.classList.remove("task-jump-highlight"), 1800); })); }} /></div>
   </div><style>{`.field{width:100%;border:1px solid #eadcca;background:#fffdf8;border-radius:14px;padding:10px 12px;font-size:14px;outline:none}.field:focus{border-color:#e2ad62;box-shadow:0 0 0 3px rgba(226,173,98,.15)}.scroll-shell{position:relative;overflow:visible}.task-scroll{height:264px;max-height:264px;overflow-x:hidden;padding-right:18px;scrollbar-width:none;-ms-overflow-style:none;overscroll-behavior:contain}.task-scroll::-webkit-scrollbar{width:0;height:0}.task-scroll.can-scroll{overflow-y:auto}.task-scroll.no-scroll{overflow-y:hidden}.custom-rail{pointer-events:none;position:absolute;right:2px;top:0;width:8px;height:264px;border-radius:999px;background:#F0E2CF;overflow:hidden;z-index:2}.custom-thumb{position:absolute;left:0;width:8px;min-height:44px;border-radius:999px;background:#C79655;will-change:transform}.scroll-hint{margin-top:8px;display:flex;justify-content:center;color:#9A7444;font-size:11px;font-weight:700}.task-jump-highlight{animation:taskJumpHighlight 1.8s ease-out}@keyframes taskJumpHighlight{0%,35%{background:#FFE6A8;box-shadow:0 0 0 3px rgba(232,165,104,.5);border-color:#E8A568}100%{background:#FFFAF2;box-shadow:0 0 0 0 rgba(232,165,104,0);border-color:#EEE1D0}}`}</style></div>;
